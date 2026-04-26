@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID" },
+        "email": { "type": "string", "format": "email", "description": "User email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "User photo URL" },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "User access role" }
+      },
+      "required": ["uid"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order information",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "ID of the user who placed the order" },
+        "items": { "type": "array", "description": "List of items in the order" },
+        "total": { "type": "number", "description": "Total order amount" },
+        "status": { "type": "string", "enum": ["pending", "shipped", "delivered", "received", "cancelled", "returning", "returned"], "description": "Order status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Order creation date" },
+        "estimatedDelivery": { "type": "string", "format": "date-time", "description": "Estimated delivery date" },
+        "trackingNumber": { "type": "string", "description": "Order tracking number" },
+        "currentLocation": { "type": "string", "description": "Current location of the order" },
+        "returnReason": { "type": "string", "description": "Reason for returning the order" },
+        "shippingInfo": { "type": "object", "description": "Customer shipping information" },
+        "paymentMethod": { "type": "string", "description": "Payment method used" }
+      },
+      "required": ["userId", "items", "total", "status", "createdAt", "shippingInfo", "paymentMethod"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store product information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID" },
+        "sku": { "type": "string", "description": "Stock Keeping Unit / Product Code" },
+        "name": { "type": "string", "description": "Product name" },
+        "description": { "type": "string", "description": "Product description" },
+        "price": { "type": "number", "description": "Product price" },
+        "costPrice": { "type": "number", "description": "Product cost price" },
+        "category": { "type": "string", "description": "Product category" },
+        "image": { "type": "string", "description": "Product image URL" },
+        "rating": { "type": "number", "description": "Product rating" },
+        "reviews": { "type": "number", "description": "Number of reviews" },
+        "stock": { "type": "number", "description": "Current stock quantity" }
+      },
+      "required": ["id", "name", "price", "category", "image"]
+    },
+    "Cart": {
+      "title": "Cart",
+      "description": "User shopping cart",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "description": "List of items in the cart" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update time" }
+      },
+      "required": ["items", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Store products"
+    },
+    "/carts/{userId}": {
+      "schema": "Cart",
+      "description": "User shopping carts"
+    }
+  }
+}

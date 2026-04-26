@@ -1,0 +1,135 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 0. Default Deny Catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Shared Helper Functions (Pillar 3 & 4)
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    // Role-based Access (Must be backed by server-side source of truth)
+    // Here we check the users collection for an admin role
+    function checkAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ===============================================================
+    // Entity Validation (Pillar 2)
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'role']) &&
+             data.keys().size() >= 2 && data.keys().size() <= 6 &&
+             data.uid == request.auth.uid &&
+             data.role in ['admin', 'user'] &&
+             (!('email' in data) || data.email is string && data.email.size() < 256) &&
+             (!('displayName' in data) || data.displayName is string && data.displayName.size() < 128) &&
+             (!('photoURL' in data) || data.photoURL is string && data.photoURL.size() < 1024);
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'name', 'price', 'category', 'image', 'stock']) &&
+             data.keys().size() >= 6 && data.keys().size() <= 12 &&
+             data.id is string && data.id.size() < 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 256 &&
+             data.price is number && data.price >= 0 &&
+             data.category is string && data.category.size() < 128 &&
+             data.image is string && data.image.size() < 2048 &&
+             data.stock is number && data.stock >= 0 &&
+             (!('sku' in data) || data.sku is string && data.sku.size() < 64) &&
+             (!('costPrice' in data) || data.costPrice is number && data.costPrice >= 0) &&
+             (!('description' in data) || data.description is string && data.description.size() < 5000);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['userId', 'items', 'total', 'status', 'createdAt', 'shippingInfo', 'paymentMethod']) &&
+             data.keys().size() >= 7 && data.keys().size() <= 15 &&
+             data.userId == request.auth.uid &&
+             data.items is list && data.items.size() > 0 && data.items.size() <= 50 &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['pending', 'shipped', 'delivered', 'received', 'cancelled', 'returning', 'returned'] &&
+             data.createdAt == request.time &&
+             data.shippingInfo is map &&
+             data.shippingInfo.keys().hasAll(['phone', 'address', 'city', 'zipCode']) &&
+             data.paymentMethod is string;
+    }
+
+    // ===============================================================
+    // Rules (Pillar 1, 5, 6, 8)
+    // ===============================================================
+
+    // Users Collection (PII Isolated)
+    match /users/{userId} {
+      allow get: if isOwner(userId) || checkAdmin();
+      allow list: if checkAdmin(); // Only admin can list users
+
+      allow create: if isOwner(userId) && isValidUser(incoming()) && 
+                    (incoming().role == 'user' || checkAdmin()); // Don't let users make themselves admin
+
+      allow update: if (isOwner(userId) || checkAdmin()) &&
+                    isValidUser(incoming()) &&
+                    (incoming().role == existing().role || checkAdmin()); // Immutable role unless admin
+    }
+
+    // Products Collection (Public Read, Admin Write)
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if checkAdmin() && isValidId(productId) && isValidProduct(incoming());
+      allow update: if checkAdmin() && isValidProduct(incoming());
+      allow delete: if checkAdmin();
+    }
+
+    // Orders Collection (Owner Read, Multi-tier Write)
+    match /orders/{orderId} {
+      allow get: if isOwner(existing().userId) || checkAdmin();
+      allow list: if isOwner(existing().userId) || checkAdmin();
+
+      allow create: if isVerified() && isValidId(orderId) && isValidOrder(incoming()) &&
+                    exists(/databases/$(database)/documents/users/$(request.auth.uid)); // Ensure user exists
+
+      allow update: if (isOwner(existing().userId) || checkAdmin()) &&
+                    (
+                      // Action: Admin Full Update (Fulfillment)
+                      (checkAdmin() && isValidOrder(incoming())) ||
+                      // Action: User Cancel (Only if own order and pending)
+                      (isOwner(existing().userId) && 
+                       existing().status == 'pending' &&
+                       incoming().status == 'cancelled' &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+                    );
+    }
+
+    // Carts Collection (Private)
+    match /carts/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
